@@ -1,10 +1,6 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// @ts-expect-error process is a nodejs global
+// @ts-expect-error process is a nodejs global (no @types/node in this project)
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
@@ -17,8 +13,8 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, "index.html"),
-        note: path.resolve(__dirname, "note.html"),
+        main: "index.html",
+        note: "note.html",
       },
     },
   },
