@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import createStickyWin from "./StickyWin.ts";
 
 let greetInputEl: HTMLInputElement | null;
 let greetMsgEl: HTMLElement | null;
@@ -9,6 +10,9 @@ async function greet() {
     greetMsgEl.textContent = await invoke("greet", {
       name: greetInputEl.value,
     });
+
+
+    createStickyWin(greetInputEl.value);
   }
 }
 
