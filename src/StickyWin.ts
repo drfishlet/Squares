@@ -16,8 +16,8 @@ export default function createStickyWin(title: string) {
   const win = new WebviewWindow(label, {
     title,
     url: "/note.html",
-    width: 800,
-    height: 600,
+    width: 250,
+    height: 250,
     minimizable: false,
     maximizable: false,
     resizable: true,
