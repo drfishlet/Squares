@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import createStickyWin from "./StickyWin.ts";
 
 let greetInputEl: HTMLInputElement | null;
@@ -22,5 +23,10 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#greet-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
     greet();
+  });
+
+  // Create a new note when triggered from the system tray menu.
+  listen("create-note", () => {
+    createStickyWin("New Note");
   });
 });
