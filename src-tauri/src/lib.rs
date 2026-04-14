@@ -34,11 +34,6 @@ pub fn run() {
                     }
                     "new_note" => {
                         let _ = app.emit("create-note", ());
-                        // Ensure the main window is visible so the event can be received
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
                     }
                     "show_window" => {
                         if let Some(window) = app.get_webview_window("main") {
