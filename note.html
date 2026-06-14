@@ -301,7 +301,12 @@
         // running in the main window). The uuid is carried in the window label by StickyWin.
         const noteWin = window.__TAURI__.window.getCurrentWindow();
         const uuid = noteWin.label.replace(/^sticky-/, '');
+
+        // While we're populating the UI from saved state on load, suppress reports so
+        // hydration doesn't echo back as changes (which would re-stamp lastModified).
+        let hydrating = true;
         function reportNote(patch) {
+            if (hydrating) return Promise.resolve();
             return window.__TAURI__.event.emit('note:update', { uuid, ...patch });
         }
 
@@ -356,7 +361,8 @@
 
         let activeColor = COLORS[0];
 
-        function setColor(hex) {
+        // Visual-only colour change (no store report) — used during hydration.
+        function applyColor(hex) {
             activeColor = hex;
             body.style.backgroundColor = hex;
             customColor.value = hex;
@@ -364,6 +370,11 @@
             document.querySelectorAll('.swatch').forEach(s => {
                 s.classList.toggle('active', s.dataset.color === hex);
             });
+        }
+
+        // User-driven colour change: update visuals and report to the store.
+        function setColor(hex) {
+            applyColor(hex);
             reportNote({ color: hex });
         }
 
@@ -411,26 +422,59 @@
             reportNote({ content: e.target.innerHTML });
         });
 
-        // Pasted images: encode to a base64 data URL so the picture lives inside the
-        // note's HTML as a self-contained string. (A raw paste can yield an ephemeral
-        // blob: URL, which would be a dead reference once the note/app reloads.)
+        // Pasted images must end up as base64 data URLs so the picture lives inside the
+        // note's HTML as a self-contained string. A blob: URL (which WebKitGTK inserts on
+        // Linux) is only valid in this window's session and becomes a dead reference once
+        // the note/app reloads — so it must be inlined here, before the content string
+        // ever leaves this window for the store/disk.
         editable.addEventListener('paste', (e) => {
             const items = e.clipboardData && e.clipboardData.items;
-            if (!items) return;
-            for (const item of items) {
-                if (!item.type.startsWith('image/')) continue;
-                e.preventDefault();
-                const file = item.getAsFile();
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => {
-                    insertImageAtCaret(reader.result); // data:<mime>;base64,...
-                    reportNote({ content: editable.innerHTML });
-                };
-                reader.readAsDataURL(file);
-                return; // handle the first image in the clipboard
+            if (items) {
+                for (const item of items) {
+                    if (!item.type.startsWith('image/')) continue;
+                    e.preventDefault();
+                    const file = item.getAsFile();
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        insertImageAtCaret(reader.result); // data:<mime>;base64,...
+                        reportNote({ content: editable.innerHTML });
+                    };
+                    reader.readAsDataURL(file);
+                    return; // handle the first image in the clipboard
+                }
             }
+            // Fallback (notably WebKitGTK): the clipboard exposed no image item, so the
+            // default paste runs and inserts <img src="blob:...">. Once that lands (next
+            // tick), inline any non-data image src into a data URL.
+            setTimeout(inlineImages, 0);
         });
+
+        // Convert any <img> whose src isn't already a data: URL (blob:, http:, file:) into
+        // a self-contained base64 data URL, then report the updated content. The blob/URL
+        // is fetched here in the note window where it's still resolvable.
+        async function inlineImages() {
+            let changed = false;
+            for (const img of editable.querySelectorAll('img')) {
+                const src = img.getAttribute('src') || '';
+                if (src.startsWith('data:')) continue;
+                try {
+                    const blob = await (await fetch(src)).blob();
+                    const dataUrl = await new Promise((resolve, reject) => {
+                        const r = new FileReader();
+                        r.onload = () => resolve(r.result);
+                        r.onerror = reject;
+                        r.readAsDataURL(blob);
+                    });
+                    img.src = dataUrl;
+                    img.style.maxWidth = '100%';
+                    changed = true;
+                } catch (err) {
+                    console.error('could not inline image src', src, err);
+                }
+            }
+            if (changed) reportNote({ content: editable.innerHTML });
+        }
 
         function insertImageAtCaret(dataUrl) {
             const img = document.createElement('img');
@@ -450,13 +494,33 @@
             }
         }
 
-        // Report geometry. StickyWin can't know the WM-chosen position, so push the
-        // real values once on load, then on every native move/resize.
-        Promise.all([noteWin.outerPosition(), noteWin.outerSize()]).then(([pos, size]) => {
-            reportNote({ x: pos.x, y: pos.y, width: size.width, height: size.height });
-        });
+        // React to user moves/resizes (suppressed until hydration completes).
         noteWin.onMoved(({ payload }) => reportNote({ x: payload.x, y: payload.y }));
         noteWin.onResized(({ payload }) => reportNote({ width: payload.width, height: payload.height }));
+
+        // Hydrate from disk. A reopened note loads its saved title/content/colour from
+        // its {uuid}.note file (geometry was already restored at window creation). A
+        // brand-new note has no file yet, so it instead reports its WM-chosen geometry.
+        const titleInput = document.querySelector('.title-input');
+        (async () => {
+            let saved = null;
+            try {
+                saved = await window.__TAURI__.core.invoke('get_note', { uuid });
+            } catch (e) {
+                console.error('get_note failed:', e);
+            }
+
+            if (saved) {
+                titleInput.value = saved.title || '';
+                editable.innerHTML = saved.content || '';
+                applyColor(saved.color || activeColor);
+                hydrating = false;
+            } else {
+                hydrating = false;
+                const [pos, size] = await Promise.all([noteWin.outerPosition(), noteWin.outerSize()]);
+                reportNote({ x: pos.x, y: pos.y, width: size.width, height: size.height });
+            }
+        })();
 
         // Wide CSS hit-zones hand off to the native WM resize via a Rust command
         // (start_resize_dragging). Same mechanism as the title-bar startDragging() that

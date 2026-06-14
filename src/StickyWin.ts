@@ -1,8 +1,8 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { addNote, DEFAULT_COLOR } from "./repo";
+import { addNote, DEFAULT_COLOR, type Note } from "./repo";
 
 /**
- * Opens a new window. `label` must be alphanumeric plus - / : _ (no spaces).
+ * Opens a sticky-note window. `label` must be alphanumeric plus - / : _ (no spaces).
  *
  * **Linux:** There is no API to hide *only* the minimize button. Tao’s GTK header bar always uses a
  * layout that includes minimize (`menu:minimize,…`). `minimizable: false` is a no-op on Linux.
@@ -11,35 +11,22 @@ import { addNote, DEFAULT_COLOR } from "./repo";
  * To move the window you typically rely on your WM (e.g. Super+drag on many desktops), or load an
  * in-app page that includes a `data-tauri-drag-region` strip. External URLs cannot add that
  * without a local wrapper page.
+ *
+ * The window label embeds the uuid; the note window reads it back to identify itself when
+ * reporting changes to the repo, and to hydrate its UI from disk (see note.html).
  */
-export default function createStickyWin(title: string) {
-  const uuid = crypto.randomUUID();
-  // The window label embeds the uuid; the note window reads it back to identify
-  // itself when reporting changes to the repo (see note.html).
-  const label = `sticky-${uuid}`;
-  const width = 250;
-  const height = 250;
-
-  // Seed the central store. The note window corrects x/y/width/height with its
-  // real geometry once it loads, and reports title/content/color as they're edited.
-  addNote({
-    uuid,
-    title,
-    content: "",
-    color: DEFAULT_COLOR,
-    x: 0,
-    y: 0,
-    width,
-    height,
-    lastModified: new Date().toISOString(),
-    isClosed: false,
-  });
-
-  const win = new WebviewWindow(label, {
+function openWindow(
+  uuid: string,
+  title: string,
+  geometry: { x?: number; y?: number; width: number; height: number },
+) {
+  const win = new WebviewWindow(`sticky-${uuid}`, {
     title,
     url: "/note.html",
-    width,
-    height,
+    x: geometry.x,
+    y: geometry.y,
+    width: geometry.width,
+    height: geometry.height,
     minimizable: false,
     maximizable: false,
     resizable: true,
@@ -61,4 +48,40 @@ export default function createStickyWin(title: string) {
   });
 
   return win;
+}
+
+/** Create a brand-new note: seed the store (which persists it) and open its window.
+ *  No position is given, so the window manager places it. */
+export default function createStickyWin(title: string) {
+  const uuid = crypto.randomUUID();
+  const width = 250;
+  const height = 250;
+
+  // Seed the central store. The note window corrects x/y with its real (WM-chosen)
+  // geometry once it loads, and reports title/content/color as they're edited.
+  addNote({
+    uuid,
+    title,
+    content: "",
+    color: DEFAULT_COLOR,
+    x: 0,
+    y: 0,
+    width,
+    height,
+    lastModified: new Date().toISOString(),
+    isClosed: false,
+  });
+
+  return openWindow(uuid, title, { width, height });
+}
+
+/** Reopen a note loaded from disk: it's already in the store (hydrated), so just
+ *  open its window at the saved geometry. The note window populates its own UI. */
+export function reopenNote(note: Note) {
+  return openWindow(note.uuid, note.title, {
+    x: note.x,
+    y: note.y,
+    width: note.width,
+    height: note.height,
+  });
 }

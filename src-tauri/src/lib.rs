@@ -1,12 +1,102 @@
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
+    AppHandle, Emitter, Manager,
 };
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+/// On-disk shape of a note. Mirrors the `Note` interface in src/repo.ts; the
+/// camelCase rename maps `last_modified`/`is_closed` to `lastModified`/`isClosed`.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Note {
+    uuid: String,
+    title: String,
+    content: String,
+    color: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    last_modified: String,
+    is_closed: bool,
+}
+
+/// Directory where notes live: `~/.squares` on Linux/macOS, `%APPDATA%\Squares`
+/// on Windows. Created if missing.
+fn notes_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let base = if cfg!(windows) {
+        app.path().data_dir().map_err(|e| e.to_string())?.join("Squares")
+    } else {
+        app.path().home_dir().map_err(|e| e.to_string())?.join(".squares")
+    };
+    fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    Ok(base)
+}
+
+/// Persist a single note as `{uuid}.note`. Writes to a temp file and renames so a
+/// reader never sees a half-written file.
+#[tauri::command]
+fn save_note(app: AppHandle, note: Note) -> Result<(), String> {
+    let dir = notes_dir(&app)?;
+    let json = serde_json::to_string_pretty(&note).map_err(|e| e.to_string())?;
+    let tmp = dir.join(format!("{}.note.tmp", note.uuid));
+    let path = dir.join(format!("{}.note", note.uuid));
+    fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Permanently delete a note's file (used for hard-delete, not for closing).
+#[tauri::command]
+fn delete_note(app: AppHandle, uuid: String) -> Result<(), String> {
+    let path = notes_dir(&app)?.join(format!("{}.note", uuid));
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Load every `*.note` file. A malformed file is logged and skipped rather than
+/// failing the whole load.
+#[tauri::command]
+fn load_notes(app: AppHandle) -> Result<Vec<Note>, String> {
+    let dir = notes_dir(&app)?;
+    let mut notes = Vec::new();
+    for entry in fs::read_dir(&dir).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("note") {
+            continue;
+        }
+        match fs::read_to_string(&path) {
+            Ok(s) => match serde_json::from_str::<Note>(&s) {
+                Ok(note) => notes.push(note),
+                Err(e) => eprintln!("skipping malformed note {:?}: {}", path, e),
+            },
+            Err(e) => eprintln!("could not read note {:?}: {}", path, e),
+        }
+    }
+    Ok(notes)
+}
+
+/// Read a single note by uuid, or `None` if no file exists yet. Used by note.html
+/// to hydrate its own UI on load.
+#[tauri::command]
+fn get_note(app: AppHandle, uuid: String) -> Result<Option<Note>, String> {
+    let path = notes_dir(&app)?.join(format!("{}.note", uuid));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let s = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let note = serde_json::from_str::<Note>(&s).map_err(|e| e.to_string())?;
+    Ok(Some(note))
 }
 
 // Native window resize, started from the JS resize handles in note.html. `direction`
@@ -88,7 +178,14 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![greet, start_resize])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            start_resize,
+            save_note,
+            delete_note,
+            load_notes,
+            get_note
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

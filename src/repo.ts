@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface Note {
   uuid: string;
@@ -27,9 +28,9 @@ export function getNote(uuid: string): Note | undefined {
 /** Insert a note, or merge into the existing one if its uuid is already present. */
 export function addNote(note: Note): Note {
   const existing = getNote(note.uuid);
-  if (existing) return Object.assign(existing, note);
-  Notes.push(note);
-  return note;
+  const result = existing ? Object.assign(existing, note) : (Notes.push(note), note);
+  persist(note.uuid);
+  return result;
 }
 
 /** Apply a partial change to a note. uuid is never overwritten, and any change
@@ -38,12 +39,55 @@ export function updateNote(uuid: string, patch: Partial<Note>): Note | undefined
   const note = getNote(uuid);
   if (!note) return undefined;
   Object.assign(note, patch, { uuid, lastModified: new Date().toISOString() });
+  persist(uuid);
   return note;
 }
 
 export function removeNote(uuid: string): void {
   const i = Notes.findIndex((n) => n.uuid === uuid);
   if (i !== -1) Notes.splice(i, 1);
+  // Permanent delete: cancel any pending save and remove the file from disk.
+  const timer = saveTimers.get(uuid);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    saveTimers.delete(uuid);
+  }
+  invoke("delete_note", { uuid }).catch((e) => console.error("delete_note failed:", e));
+}
+
+// --- Persistence -----------------------------------------------------------
+//
+// Each change schedules a debounced write of the whole note to disk (one
+// {uuid}.note file per note, written by the Rust `save_note` command). Debouncing
+// absorbs rapid bursts — content keystrokes and move/resize drags.
+
+const SAVE_DEBOUNCE_MS = 400;
+const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function persist(uuid: string): void {
+  const existing = saveTimers.get(uuid);
+  if (existing !== undefined) clearTimeout(existing);
+  saveTimers.set(
+    uuid,
+    setTimeout(() => {
+      saveTimers.delete(uuid);
+      const note = getNote(uuid);
+      if (note) invoke("save_note", { note }).catch((e) => console.error("save_note failed:", e));
+    }, SAVE_DEBOUNCE_MS),
+  );
+}
+
+/**
+ * Populate the store from notes loaded off disk at startup. Deliberately bypasses
+ * updateNote/persist so loading never re-stamps lastModified or rewrites the files
+ * it just read.
+ */
+export function hydrate(notes: Note[]): void {
+  for (const note of notes) {
+    const existing = getNote(note.uuid);
+    if (existing) Object.assign(existing, note);
+    else Notes.push(note);
+  }
 }
 
 function defaults(uuid: string): Note {
