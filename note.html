@@ -216,18 +216,21 @@
             font-size: 14px;
         }
 
+        /* Edges run the full length; corners sit on top (higher z-index) with a larger
+           hit-zone, so a corner resize always wins near a corner — even when the cursor
+           is hugging a horizontal or vertical edge. */
         .resize-handle {
             position: fixed;
             z-index: 10000;
         }
-        .resize-n  { top: 0;    left: 8px;  right: 8px;  height: 8px; cursor: n-resize; }
-        .resize-s  { bottom: 0; left: 8px;  right: 8px;  height: 8px; cursor: s-resize; }
-        .resize-w  { left: 0;   top: 8px;   bottom: 8px; width: 8px;  cursor: w-resize; }
-        .resize-e  { right: 0;  top: 8px;   bottom: 8px; width: 8px;  cursor: e-resize; }
-        .resize-nw { top: 0;    left: 0;    width: 12px; height: 12px; cursor: nw-resize; }
-        .resize-ne { top: 0;    right: 0;   width: 12px; height: 12px; cursor: ne-resize; }
-        .resize-sw { bottom: 0; left: 0;    width: 12px; height: 12px; cursor: sw-resize; }
-        .resize-se { bottom: 0; right: 0;   width: 12px; height: 12px; cursor: se-resize; }
+        .resize-n  { top: 0;    left: 0;  right: 0;  height: 8px; cursor: n-resize; }
+        .resize-s  { bottom: 0; left: 0;  right: 0;  height: 8px; cursor: s-resize; }
+        .resize-w  { left: 0;   top: 0;   bottom: 0; width: 8px;  cursor: w-resize; }
+        .resize-e  { right: 0;  top: 0;   bottom: 0; width: 8px;  cursor: e-resize; }
+        .resize-nw { top: 0;    left: 0;  width: 16px; height: 16px; cursor: nw-resize; z-index: 10001; }
+        .resize-ne { top: 0;    right: 0; width: 16px; height: 16px; cursor: ne-resize; z-index: 10001; }
+        .resize-sw { bottom: 0; left: 0;  width: 16px; height: 16px; cursor: sw-resize; z-index: 10001; }
+        .resize-se { bottom: 0; right: 0; width: 16px; height: 16px; cursor: se-resize; z-index: 10001; }
     </style>
 </head>
 <body>
