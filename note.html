@@ -272,7 +272,7 @@
     </div>
 
     <div class="note-content">
-        <div contenteditable="true">Hello</div>
+        <div contenteditable="true"></div>
     </div>
 
     <script>
@@ -294,9 +294,19 @@
             '#D7CCC8',
         ];
 
-        // Close button
-        document.getElementById('closeBtn').addEventListener('click', () => {
-            window.__TAURI__.window.getCurrentWindow().close();
+        // This note's identity + a helper to push changes to the central store (repo.ts,
+        // running in the main window). The uuid is carried in the window label by StickyWin.
+        const noteWin = window.__TAURI__.window.getCurrentWindow();
+        const uuid = noteWin.label.replace(/^sticky-/, '');
+        function reportNote(patch) {
+            return window.__TAURI__.event.emit('note:update', { uuid, ...patch });
+        }
+
+        // Close button: mark the note closed in the store (the data is kept), then
+        // close the window. Await the emit so it isn't dropped as the webview tears down.
+        document.getElementById('closeBtn').addEventListener('click', async () => {
+            await reportNote({ isClosed: true });
+            noteWin.close();
         });
 
         // Pin toggle
@@ -351,6 +361,7 @@
             document.querySelectorAll('.swatch').forEach(s => {
                 s.classList.toggle('active', s.dataset.color === hex);
             });
+            reportNote({ color: hex });
         }
 
         // Build swatches
@@ -387,6 +398,22 @@
 
         // Init background
         body.style.backgroundColor = activeColor;
+
+        // Report title + content edits to the store as they happen.
+        document.querySelector('.title-input').addEventListener('input', (e) => {
+            reportNote({ title: e.target.value });
+        });
+        document.querySelector('.note-content [contenteditable]').addEventListener('input', (e) => {
+            reportNote({ content: e.target.innerHTML });
+        });
+
+        // Report geometry. StickyWin can't know the WM-chosen position, so push the
+        // real values once on load, then on every native move/resize.
+        Promise.all([noteWin.outerPosition(), noteWin.outerSize()]).then(([pos, size]) => {
+            reportNote({ x: pos.x, y: pos.y, width: size.width, height: size.height });
+        });
+        noteWin.onMoved(({ payload }) => reportNote({ x: payload.x, y: payload.y }));
+        noteWin.onResized(({ payload }) => reportNote({ width: payload.width, height: payload.height }));
 
         // Wide CSS hit-zones hand off to the native WM resize via a Rust command
         // (start_resize_dragging). Same mechanism as the title-bar startDragging() that

@@ -1,4 +1,5 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { addNote, DEFAULT_COLOR } from "./repo";
 
 /**
  * Opens a new window. `label` must be alphanumeric plus - / : _ (no spaces).
@@ -12,12 +13,33 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
  * without a local wrapper page.
  */
 export default function createStickyWin(title: string) {
-  const label = `sticky-${crypto.randomUUID()}`;
+  const uuid = crypto.randomUUID();
+  // The window label embeds the uuid; the note window reads it back to identify
+  // itself when reporting changes to the repo (see note.html).
+  const label = `sticky-${uuid}`;
+  const width = 250;
+  const height = 250;
+
+  // Seed the central store. The note window corrects x/y/width/height with its
+  // real geometry once it loads, and reports title/content/color as they're edited.
+  addNote({
+    uuid,
+    title,
+    content: "",
+    color: DEFAULT_COLOR,
+    x: 0,
+    y: 0,
+    width,
+    height,
+    lastModified: new Date().toISOString(),
+    isClosed: false,
+  });
+
   const win = new WebviewWindow(label, {
     title,
     url: "/note.html",
-    width: 250,
-    height: 250,
+    width,
+    height,
     minimizable: false,
     maximizable: false,
     resizable: true,
