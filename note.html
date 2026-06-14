@@ -403,12 +403,52 @@
         body.style.backgroundColor = activeColor;
 
         // Report title + content edits to the store as they happen.
+        const editable = document.querySelector('.note-content [contenteditable]');
         document.querySelector('.title-input').addEventListener('input', (e) => {
             reportNote({ title: e.target.value });
         });
-        document.querySelector('.note-content [contenteditable]').addEventListener('input', (e) => {
+        editable.addEventListener('input', (e) => {
             reportNote({ content: e.target.innerHTML });
         });
+
+        // Pasted images: encode to a base64 data URL so the picture lives inside the
+        // note's HTML as a self-contained string. (A raw paste can yield an ephemeral
+        // blob: URL, which would be a dead reference once the note/app reloads.)
+        editable.addEventListener('paste', (e) => {
+            const items = e.clipboardData && e.clipboardData.items;
+            if (!items) return;
+            for (const item of items) {
+                if (!item.type.startsWith('image/')) continue;
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    insertImageAtCaret(reader.result); // data:<mime>;base64,...
+                    reportNote({ content: editable.innerHTML });
+                };
+                reader.readAsDataURL(file);
+                return; // handle the first image in the clipboard
+            }
+        });
+
+        function insertImageAtCaret(dataUrl) {
+            const img = document.createElement('img');
+            img.src = dataUrl;
+            img.style.maxWidth = '100%'; // keep large pastes inside the note
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(img);
+                range.setStartAfter(img);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } else {
+                editable.appendChild(img);
+            }
+        }
 
         // Report geometry. StickyWin can't know the WM-chosen position, so push the
         // real values once on load, then on every native move/resize.
