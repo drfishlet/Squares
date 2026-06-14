@@ -310,6 +310,15 @@
             return window.__TAURI__.event.emit('note:update', { uuid, ...patch });
         }
 
+        // Record a caught error to squares.log (in the notes directory) via Rust.
+        // Best-effort: logging failures are swallowed so they never mask the original.
+        function logError(context, err) {
+            const detail = err && err.stack ? err.stack : String(err);
+            const message = `[note ${uuid} ${context}] ${detail}`;
+            console.error(message);
+            window.__TAURI__.core.invoke('log_message', { message }).catch(() => {});
+        }
+
         // Close button: mark the note closed in the store (the data is kept), then
         // close the window. Await the emit so it isn't dropped as the webview tears down.
         document.getElementById('closeBtn').addEventListener('click', async () => {
@@ -470,7 +479,7 @@
                     img.style.maxWidth = '100%';
                     changed = true;
                 } catch (err) {
-                    console.error('could not inline image src', src, err);
+                    logError(`inline image ${src.slice(0, 40)}`, err);
                 }
             }
             if (changed) reportNote({ content: editable.innerHTML });
@@ -507,7 +516,7 @@
             try {
                 saved = await window.__TAURI__.core.invoke('get_note', { uuid });
             } catch (e) {
-                console.error('get_note failed:', e);
+                logError('get_note', e);
             }
 
             if (saved) {

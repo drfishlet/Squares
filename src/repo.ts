@@ -21,6 +21,18 @@ export const Notes: Note[] = [];
 
 export const DEFAULT_COLOR = "#FFFDE7";
 
+/**
+ * Record a caught error to the console and to squares.log (in the notes directory)
+ * via the Rust log_message command. Best-effort: a failure to log is swallowed so it
+ * can never mask the original error.
+ */
+export function logError(context: string, err: unknown): void {
+  const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+  const message = `[${context}] ${detail}`;
+  console.error(message);
+  invoke("log_message", { message }).catch(() => {});
+}
+
 export function getNote(uuid: string): Note | undefined {
   return Notes.find((n) => n.uuid === uuid);
 }
@@ -52,7 +64,7 @@ export function removeNote(uuid: string): void {
     clearTimeout(timer);
     saveTimers.delete(uuid);
   }
-  invoke("delete_note", { uuid }).catch((e) => console.error("delete_note failed:", e));
+  invoke("delete_note", { uuid }).catch((e) => logError("delete_note", e));
 }
 
 // --- Persistence -----------------------------------------------------------
@@ -72,7 +84,7 @@ function persist(uuid: string): void {
     setTimeout(() => {
       saveTimers.delete(uuid);
       const note = getNote(uuid);
-      if (note) invoke("save_note", { note }).catch((e) => console.error("save_note failed:", e));
+      if (note) invoke("save_note", { note }).catch((e) => logError("save_note", e));
     }, SAVE_DEBOUNCE_MS),
   );
 }

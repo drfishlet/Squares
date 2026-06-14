@@ -1,5 +1,5 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { addNote, DEFAULT_COLOR, type Note } from "./repo";
+import { addNote, DEFAULT_COLOR, logError, type Note } from "./repo";
 
 /**
  * Opens a sticky-note window. `label` must be alphanumeric plus - / : _ (no spaces).
@@ -39,12 +39,12 @@ function openWindow(
       await win.setMinimizable(false);
       await win.setMaximizable(false);
     } catch (e) {
-      console.warn("Could not set minimizable/maximizable:", e);
+      logError(`window ${uuid} minimizable/maximizable`, e);
     }
   });
 
   win.once("tauri://error", (e) => {
-    console.error("WebviewWindow failed:", e);
+    logError(`window ${uuid}`, e?.payload ?? e);
   });
 
   return win;

@@ -1,5 +1,7 @@
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -41,6 +43,32 @@ fn notes_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(base)
 }
 
+/// Append a timestamped line to `squares.log` in the notes directory. Best-effort:
+/// a logging failure must never disrupt the operation that triggered it.
+fn append_log(app: &AppHandle, message: &str) {
+    if let Err(e) = try_append_log(app, message) {
+        eprintln!("could not write squares.log: {}", e);
+    }
+}
+
+fn try_append_log(app: &AppHandle, message: &str) -> Result<(), String> {
+    let path = notes_dir(app)?.join("squares.log");
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    writeln!(file, "{} {}", Utc::now().to_rfc3339(), message).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Log a caught error from the frontend to `squares.log`. Timestamps are generated
+/// here so every line in the file shares one format, wherever the error originated.
+#[tauri::command]
+fn log_message(app: AppHandle, message: String) {
+    append_log(&app, &message);
+}
+
 /// Persist a single note as `{uuid}.note`. Writes to a temp file and renames so a
 /// reader never sees a half-written file.
 #[tauri::command]
@@ -78,9 +106,9 @@ fn load_notes(app: AppHandle) -> Result<Vec<Note>, String> {
         match fs::read_to_string(&path) {
             Ok(s) => match serde_json::from_str::<Note>(&s) {
                 Ok(note) => notes.push(note),
-                Err(e) => eprintln!("skipping malformed note {:?}: {}", path, e),
+                Err(e) => append_log(&app, &format!("[load_notes] skipping malformed note {:?}: {}", path, e)),
             },
-            Err(e) => eprintln!("could not read note {:?}: {}", path, e),
+            Err(e) => append_log(&app, &format!("[load_notes] could not read note {:?}: {}", path, e)),
         }
     }
     Ok(notes)
@@ -184,7 +212,8 @@ pub fn run() {
             save_note,
             delete_note,
             load_notes,
-            get_note
+            get_note,
+            log_message
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
