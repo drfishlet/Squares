@@ -9,6 +9,18 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+// Native window resize, started from the JS resize handles in note.html. `direction`
+// is deserialized straight from the matching ResizeDirection variant name (e.g. "SouthEast").
+// This hands off to the WM (GTK begin_resize_drag on Linux), so the grab is as reliable as
+// the native border but triggered from our wide CSS hit-zones.
+#[tauri::command]
+fn start_resize(
+    window: tauri::Window,
+    direction: tauri_runtime::ResizeDirection,
+) -> Result<(), String> {
+    window.start_resize_dragging(direction).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -76,7 +88,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![greet, start_resize])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

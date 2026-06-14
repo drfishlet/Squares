@@ -215,9 +215,30 @@
             font-family: sans-serif;
             font-size: 14px;
         }
+
+        .resize-handle {
+            position: fixed;
+            z-index: 10000;
+        }
+        .resize-n  { top: 0;    left: 8px;  right: 8px;  height: 8px; cursor: n-resize; }
+        .resize-s  { bottom: 0; left: 8px;  right: 8px;  height: 8px; cursor: s-resize; }
+        .resize-w  { left: 0;   top: 8px;   bottom: 8px; width: 8px;  cursor: w-resize; }
+        .resize-e  { right: 0;  top: 8px;   bottom: 8px; width: 8px;  cursor: e-resize; }
+        .resize-nw { top: 0;    left: 0;    width: 12px; height: 12px; cursor: nw-resize; }
+        .resize-ne { top: 0;    right: 0;   width: 12px; height: 12px; cursor: ne-resize; }
+        .resize-sw { bottom: 0; left: 0;    width: 12px; height: 12px; cursor: sw-resize; }
+        .resize-se { bottom: 0; right: 0;   width: 12px; height: 12px; cursor: se-resize; }
     </style>
 </head>
 <body>
+    <div class="resize-handle resize-n"  data-resize="North"></div>
+    <div class="resize-handle resize-s"  data-resize="South"></div>
+    <div class="resize-handle resize-w"  data-resize="West"></div>
+    <div class="resize-handle resize-e"  data-resize="East"></div>
+    <div class="resize-handle resize-nw" data-resize="NorthWest"></div>
+    <div class="resize-handle resize-ne" data-resize="NorthEast"></div>
+    <div class="resize-handle resize-sw" data-resize="SouthWest"></div>
+    <div class="resize-handle resize-se" data-resize="SouthEast"></div>
     <div class="title" data-tauri-drag-region>
         <div class="title-btn">
             <button class="color-btn" id="colorBtn" title="Change color">
@@ -366,6 +387,18 @@
 
         // Init background
         body.style.backgroundColor = activeColor;
+
+        // Wide CSS hit-zones hand off to the native WM resize via a Rust command
+        // (start_resize_dragging). Same mechanism as the title-bar startDragging() that
+        // already works here, so it's reliable on X11/Wayland regardless of webview geometry.
+        document.querySelectorAll('[data-resize]').forEach(el => {
+            el.addEventListener('mousedown', e => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                window.__TAURI__.core.invoke('start_resize', { direction: el.dataset.resize });
+            });
+        });
     </script>
 </body>
 </html>
