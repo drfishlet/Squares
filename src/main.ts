@@ -34,7 +34,7 @@ async function restoreNotes() {
   for (const note of notes) {
     if (note.isClosed) continue;
     try {
-      reopenNote(note);
+      await reopenNote(note);
     } catch (e) {
       logError(`reopen ${note.uuid}`, e);
     }

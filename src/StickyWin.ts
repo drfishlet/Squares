@@ -76,8 +76,13 @@ export default function createStickyWin(title: string) {
 }
 
 /** Reopen a note loaded from disk: it's already in the store (hydrated), so just
- *  open its window at the saved geometry. The note window populates its own UI. */
-export function reopenNote(note: Note) {
+ *  open its window at the saved geometry. The note window populates its own UI.
+ *
+ *  Idempotent: if the window is already open (e.g. the main window's page reloaded
+ *  and re-ran restore), this is a no-op rather than a "label already exists" error. */
+export async function reopenNote(note: Note) {
+  const existing = await WebviewWindow.getByLabel(`sticky-${note.uuid}`);
+  if (existing) return existing;
   return openWindow(note.uuid, note.title, {
     x: note.x,
     y: note.y,
